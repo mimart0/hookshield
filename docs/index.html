@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-V6M73JGVT4"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-V6M73JGVT4');
+</script>
+<title>HookShield — local control for AI coding sessions</title>
+<meta name="description" content="A local-first git hook for reviewing what AI coding sessions share before anything leaves your machine." />
+<meta property="og:title" content="hookshield" />
+<meta property="og:description" content="Review AI coding session context before it leaves your machine." />
+<meta property="og:type" content="website" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0b0c0e;
+    --ink-2:#131419;
+    --ink-3:#1a1c22;
+    --line:#272a31;
+    --line-soft:#1e2026;
+    --text:#ededea;
+    --muted:#9a9aa4;
+    --dim:#5d5e67;
+    --paper:#f3efe6;
+    --paper-line:#d8d2c4;
+    --on-paper:#16171b;
+    --on-paper-dim:#6b6557;
+    --salt:#ffb000;
+    --salt-soft:rgba(255,176,0,0.13);
+    --salt-line:rgba(255,176,0,0.32);
+    --redact:#101114;
+    --radius:4px;
+    --maxw:1180px;
+    --ease:cubic-bezier(.2,.7,.2,1);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--text);
+    font-family:"Space Grotesk",system-ui,sans-serif;
+    font-size:17px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none;}
+  ::selection{background:var(--salt);color:var(--ink);}
+
+  .mono{font-family:"JetBrains Mono",monospace;}
+  .container{max-width:var(--maxw);margin:0 auto;padding:0 28px;}
+  .eyebrow{
+    font-family:"JetBrains Mono",monospace;
+    font-size:.72rem;
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    color:var(--dim);
+    display:flex;align-items:center;gap:10px;
+  }
+  .eyebrow .tick{color:var(--salt);}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:saturate(140%) blur(12px);
+    background:rgba(11,12,14,.72);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .topbar .row{
+    max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+  }
+  .wordmark{
+    font-family:"JetBrains Mono",monospace;
+    font-weight:700;font-size:1.02rem;letter-spacing:-.01em;
+    display:flex;align-items:center;gap:2px;color:var(--text);
+  }
+  .wordmark .cursor{
+    display:inline-block;width:9px;height:1.02rem;background:var(--salt);
+    margin-left:5px;transform:translateY(2px);
+    animation:blink 1.15s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0;}}
+  .nav{display:flex;align-items:center;gap:30px;}
+  .nav a{
+    font-family:"JetBrains Mono",monospace;font-size:.82rem;color:var(--muted);
+    transition:color .18s var(--ease);
+  }
+  .nav a:hover{color:var(--text);}
+  .btn{
+    font-family:"JetBrains Mono",monospace;font-size:.84rem;font-weight:500;
+    display:inline-flex;align-items:center;gap:8px;
+    padding:9px 16px;border-radius:var(--radius);cursor:pointer;border:1px solid transparent;
+    transition:transform .15s var(--ease),background .18s var(--ease),border-color .18s var(--ease);
+  }
+  .btn-primary{background:var(--salt);color:#1a1300;font-weight:700;}
+  .btn-primary:hover{transform:translateY(-1px);background:#ffbf2e;}
+  .btn-ghost{border-color:var(--line);color:var(--text);background:transparent;}
+  .btn-ghost:hover{border-color:var(--salt-line);background:var(--salt-soft);}
+  .nav-cta{margin-left:4px;}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;padding:92px 0 84px;overflow:hidden;}
+  .hero::before{
+    content:"";position:absolute;inset:0;z-index:0;
+    background:
+      radial-gradient(620px 380px at 82% -8%, rgba(255,176,0,.10), transparent 70%),
+      linear-gradient(transparent 0 31px, var(--line-soft) 31px 32px) 0 0/100% 32px,
+      linear-gradient(90deg, transparent 0 31px, var(--line-soft) 31px 32px) 0 0/32px 100%;
+    -webkit-mask-image:linear-gradient(180deg,#000 0%,transparent 88%);
+            mask-image:linear-gradient(180deg,#000 0%,transparent 88%);
+    opacity:.5;pointer-events:none;
+  }
+  .hero .container{position:relative;z-index:1;
+    display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center;}
+
+  h1{
+    font-weight:700;font-size:clamp(2.7rem,5.6vw,5rem);line-height:.97;
+    letter-spacing:-.035em;margin:20px 0 0;
+  }
+  h1 .redacted-word{position:relative;display:inline-block;color:var(--salt);}
+  h1 .redacted-word::after{
+    content:"";position:absolute;left:-2px;right:-2px;bottom:.1em;height:.13em;
+    background:var(--salt);opacity:.55;border-radius:2px;
+  }
+  .lede{color:var(--muted);font-size:1.12rem;line-height:1.6;max-width:42ch;margin:26px 0 0;}
+  .pull{
+    margin-top:20px;display:inline-flex;align-items:center;gap:11px;
+    font-family:"JetBrains Mono",monospace;font-size:.82rem;color:var(--text);
+    border-left:2px solid var(--salt);padding:3px 0 3px 14px;background:linear-gradient(90deg,var(--salt-soft),transparent 80%);
+  }
+
+  .install{
+    margin-top:34px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;
+  }
+  .cmd{
+    display:flex;align-items:center;gap:12px;
+    background:var(--ink-2);border:1px solid var(--line);border-radius:var(--radius);
+    padding:13px 14px;font-family:"JetBrains Mono",monospace;font-size:.85rem;
+    min-width:0;
+  }
+  .cmd .prompt{color:var(--salt);}
+  .cmd code{color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .copy{
+    margin-left:2px;border:none;background:transparent;cursor:pointer;color:var(--dim);
+    font-family:"JetBrains Mono",monospace;font-size:.74rem;padding:4px 7px;border-radius:3px;
+    transition:color .15s var(--ease),background .15s var(--ease);flex:none;
+  }
+  .copy:hover{color:var(--text);background:var(--ink-3);}
+  .copy.done{color:var(--salt);}
+  .meta{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--dim);}
+  .meta b{color:var(--muted);font-weight:500;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:8px;margin-top:14px;
+    font-family:"JetBrains Mono",monospace;font-size:.74rem;color:var(--muted);
+    border:1px solid var(--line);border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.02);
+  }
+  .status-pill .dot{width:7px;height:7px;border-radius:50%;background:#1aa35a;box-shadow:0 0 0 3px rgba(26,163,90,.12);}
+
+  /* ---------- signature: the document panel ---------- */
+  .doc-wrap{position:relative;}
+  .doc-shadow{
+    position:absolute;inset:14px -10px -14px 14px;background:var(--ink-2);
+    border:1px solid var(--line);border-radius:6px;z-index:0;
+  }
+  .doc{
+    position:relative;z-index:1;background:var(--paper);color:var(--on-paper);
+    border-radius:6px;box-shadow:0 22px 60px -28px rgba(0,0,0,.75);
+    overflow:hidden;border:1px solid var(--paper-line);
+  }
+  .doc-bar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:11px 15px;border-bottom:1px solid var(--paper-line);
+    font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--on-paper-dim);
+  }
+  .doc-bar .path{color:var(--on-paper);font-weight:500;}
+  .doc-bar .live{display:inline-flex;align-items:center;gap:7px;}
+  .doc-bar .dot{width:7px;height:7px;border-radius:50%;background:#1aa35a;box-shadow:0 0 0 0 rgba(26,163,90,.5);animation:ping 2.4s var(--ease) infinite;}
+  @keyframes ping{0%{box-shadow:0 0 0 0 rgba(26,163,90,.45);}70%{box-shadow:0 0 0 6px rgba(26,163,90,0);}100%{box-shadow:0 0 0 0 rgba(26,163,90,0);}}
+
+  .doc-body{padding:8px 6px;}
+  .line{
+    display:grid;grid-template-columns:64px 1fr auto;align-items:center;gap:10px;
+    padding:7px 9px;border-radius:4px;font-family:"JetBrains Mono",monospace;font-size:.79rem;
+    transition:background .15s var(--ease);
+  }
+  .line:hover{background:rgba(0,0,0,.035);}
+  .line .kind{color:var(--on-paper-dim);font-size:.7rem;letter-spacing:.04em;}
+  .line .kind.tool{color:#9a6b00;}
+  .line .text{color:transparent;min-width:0;position:relative;display:block;white-space:nowrap;overflow:hidden;}
+  .line .text .bar{
+    position:absolute;inset:-2px -4px;background:var(--redact);border-radius:3px;display:block;
+    transition:opacity .22s var(--ease),transform .22s var(--ease);transform-origin:left;
+  }
+  .line.shared .text{color:var(--on-paper);}
+  .line.shared .text .bar{opacity:0;transform:scaleX(0);}
+  .toggle{
+    border:1px solid var(--paper-line);background:#fff;cursor:pointer;flex:none;
+    font-family:"JetBrains Mono",monospace;font-size:.62rem;letter-spacing:.08em;
+    text-transform:uppercase;padding:4px 9px;border-radius:20px;color:var(--on-paper-dim);
+    display:inline-flex;align-items:center;gap:6px;transition:all .16s var(--ease);
+  }
+  .toggle .pip{width:6px;height:6px;border-radius:50%;background:var(--on-paper-dim);}
+  .line.shared .toggle{color:#0d7a3f;border-color:rgba(13,122,63,.4);background:rgba(13,122,63,.07);}
+  .line.shared .toggle .pip{background:#0d7a3f;}
+  .toggle:hover{border-color:var(--on-paper-dim);}
+  .doc-foot{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:12px 15px;border-top:1px solid var(--paper-line);background:rgba(0,0,0,.02);
+    font-family:"JetBrains Mono",monospace;font-size:.74rem;color:var(--on-paper-dim);
+  }
+  .doc-foot .count b{color:var(--on-paper);font-weight:700;}
+  .doc-foot .hint{display:inline-flex;align-items:center;gap:6px;color:#9a6b00;}
+
+  /* ---------- generic section ---------- */
+  section{position:relative;}
+  .band{padding:96px 0;border-top:1px solid var(--line-soft);}
+  .head-2{font-weight:700;font-size:clamp(1.9rem,3.8vw,3rem);letter-spacing:-.025em;line-height:1.02;margin:14px 0 0;}
+  .sub-2{color:var(--muted);font-size:1.08rem;max-width:60ch;margin:18px 0 0;line-height:1.6;}
+
+  /* ---------- how it works ---------- */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-soft);
+    border:1px solid var(--line-soft);border-radius:8px;overflow:hidden;margin-top:48px;}
+  .step{background:var(--ink);padding:30px 26px 34px;}
+  .step .no{font-family:"JetBrains Mono",monospace;font-size:.78rem;color:var(--salt);letter-spacing:.1em;}
+  .step h3{font-size:1.22rem;font-weight:600;margin:16px 0 10px;letter-spacing:-.01em;}
+  .step p{color:var(--muted);font-size:.96rem;line-height:1.58;margin:0;}
+  .step .tags{margin-top:16px;display:flex;flex-wrap:wrap;gap:6px;}
+  .tag{font-family:"JetBrains Mono",monospace;font-size:.68rem;color:var(--dim);border:1px solid var(--line);border-radius:3px;padding:3px 7px;}
+
+  /* ---------- vs entire ---------- */
+  .vs-head{display:flex;flex-direction:column;}
+  .audit{font-family:"JetBrains Mono",monospace;font-size:.95rem;color:var(--muted);margin-top:20px;max-width:62ch;line-height:1.65;}
+  .audit b{color:var(--text);font-weight:500;}
+  .compare{margin-top:44px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .crow{display:grid;grid-template-columns:1.1fr 1.4fr 1.4fr;}
+  .crow > div{padding:16px 20px;border-bottom:1px solid var(--line-soft);font-size:.94rem;}
+  .crow:last-child > div{border-bottom:none;}
+  .crow .label{color:var(--dim);font-family:"JetBrains Mono",monospace;font-size:.74rem;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;}
+  .col-them{color:var(--muted);background:rgba(255,255,255,.012);}
+  .col-us{color:var(--text);background:var(--salt-soft);border-left:1px solid var(--salt-line);}
+  .chead{padding:18px 20px;border-bottom:1px solid var(--line);font-family:"JetBrains Mono",monospace;font-size:.82rem;letter-spacing:.02em;display:flex;align-items:center;gap:8px;}
+  .chead.them{color:var(--muted);}
+  .chead.us{color:var(--salt);background:var(--salt-soft);border-left:1px solid var(--salt-line);font-weight:700;}
+  .chead .spacer{}
+  .col-us b,.col-them b{font-weight:600;}
+
+  /* ---------- final cta ---------- */
+  .cta{padding:104px 0;text-align:center;border-top:1px solid var(--line-soft);position:relative;overflow:hidden;}
+  .cta::before{content:"";position:absolute;inset:0;background:radial-gradient(560px 300px at 50% 120%,rgba(255,176,0,.14),transparent 70%);pointer-events:none;}
+  .cta .container{position:relative;z-index:1;}
+  .cta h2{font-weight:700;font-size:clamp(2.2rem,4.6vw,3.6rem);letter-spacing:-.03em;line-height:1;margin:0 auto;max-width:18ch;}
+  .cta .install{justify-content:center;margin-top:34px;}
+  .cta .small{margin-top:22px;font-family:"JetBrains Mono",monospace;font-size:.76rem;color:var(--dim);}
+  .cta .small a{color:var(--muted);text-decoration:underline;text-underline-offset:3px;}
+  .cta .small a:hover{color:var(--salt);}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--line-soft);padding:40px 0 56px;}
+  footer .row{display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;}
+  footer .links{display:flex;flex-wrap:wrap;gap:24px;font-family:"JetBrains Mono",monospace;font-size:.78rem;}
+  footer .links a{color:var(--muted);}
+  footer .links a:hover{color:var(--text);}
+  footer .copy-line{font-family:"JetBrains Mono",monospace;font-size:.74rem;color:var(--dim);}
+
+  :focus-visible{outline:2px solid var(--salt);outline-offset:3px;border-radius:3px;}
+
+  /* ---------- responsive ---------- */
+  @media(max-width:880px){
+    .hero{padding:64px 0 56px;}
+    .hero .container{grid-template-columns:1fr;gap:44px;}
+    .nav{display:none;}
+    .steps{grid-template-columns:1fr;}
+    .crow{grid-template-columns:1fr;}
+    .crow > div{border-bottom:1px solid var(--line-soft);}
+    .crow .label{background:var(--ink-2);}
+    .chead{display:none;}
+    .crow:first-child{display:none;}
+    .col-them::before{content:"entire.io · ";color:var(--dim);font-family:"JetBrains Mono",monospace;font-size:.7rem;letter-spacing:.03em;}
+    .col-us::before{content:"hookshield · ";color:var(--salt);font-family:"JetBrains Mono",monospace;font-size:.7rem;letter-spacing:.03em;}
+    .col-us{border-left:none;border-top:1px solid var(--salt-line);}
+    .band{padding:70px 0;}
+    .doc-shadow{inset:10px -6px -10px 10px;}
+  }
+  @media(max-width:560px){
+    body{font-size:16px;}
+    .line{grid-template-columns:1fr auto;}
+    .line .kind{display:none;}
+    .cmd code{font-size:.78rem;}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important;scroll-behavior:auto;}
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="row">
+    <a href="#top" class="wordmark">hookshield<span class="cursor" aria-hidden="true"></span></a>
+    <nav class="nav">
+      <a href="#vs">vs. entire</a>
+      <a href="#how">how it works</a>
+      <a href="https://github.com/mimart0/hookshield" class="btn btn-ghost nav-cta">★ GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<a id="top"></a>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="tick">▌</span> git-native · local-first · no CLI telemetry</p>
+      <h1>Ship the code.<br />Keep your <span class="redacted-word">thoughts</span> yours.</h1>
+      <p class="lede">AI coding agents leave behind prompts, tool calls, and session notes that can expose more than the final diff. hookshield keeps that trail local so you can review it before it becomes project history.</p>
+      <p class="pull">Your working thoughts stay on your machine unless you choose to share them.</p>
+      <div class="status-pill" aria-label="Project status">
+        <span class="dot" aria-hidden="true"></span>
+        status: coming soon, currently testing and looking for contributors
+      </div>
+    </div>
+
+    <!-- SIGNATURE: the document -->
+    <div class="doc-wrap" aria-label="Interactive demo: choose what leaves your machine">
+      <div class="doc-shadow" aria-hidden="true"></div>
+      <div class="doc">
+        <div class="doc-bar">
+          <span class="path">~/your-repo · session 0xA1</span>
+          <span class="live"><span class="dot" aria-hidden="true"></span> local only</span>
+        </div>
+        <div class="doc-body" id="doc-body">
+          <!-- lines injected for clean toggling, but also static for no-JS -->
+          <div class="line shared" data-kind="prompt">
+            <span class="kind">prompt</span>
+            <span class="text">refactor the auth middleware<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="true"><span class="pip"></span>shared</button>
+          </div>
+          <div class="line" data-kind="prompt">
+            <span class="kind">prompt</span>
+            <span class="text">check whether this async path is needed<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="false"><span class="pip"></span>private</button>
+          </div>
+          <div class="line" data-kind="prompt">
+            <span class="kind">prompt</span>
+            <span class="text">compare mutex vs channel approach<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="false"><span class="pip"></span>private</button>
+          </div>
+          <div class="line shared" data-kind="tool">
+            <span class="kind tool">tool</span>
+            <span class="text">edited auth/middleware.go (+42 −18)<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="true"><span class="pip"></span>shared</button>
+          </div>
+          <div class="line" data-kind="prompt">
+            <span class="kind">prompt</span>
+            <span class="text">investigate old auth edge case<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="false"><span class="pip"></span>private</button>
+          </div>
+          <div class="line" data-kind="note">
+            <span class="kind">note</span>
+            <span class="text">deferred: rewrite with channels<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="false"><span class="pip"></span>private</button>
+          </div>
+          <div class="line shared" data-kind="prompt">
+            <span class="kind">prompt</span>
+            <span class="text">final: add rate limit, 100 req/min<span class="bar" aria-hidden="true"></span></span>
+            <button class="toggle" aria-pressed="true"><span class="pip"></span>shared</button>
+          </div>
+        </div>
+        <div class="doc-foot">
+          <span class="count"><b id="shared-n">3</b> shared · <b id="private-n">4</b> kept private</span>
+          <span class="hint">↑ review before sharing</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VS ENTIRE -->
+<section class="band" id="vs">
+  <div class="container">
+    <div class="vs-head">
+      <p class="eyebrow"><span class="tick">▌</span> the rebellion, audited</p>
+      <h2 class="head-2">They called logging everything "the rebellion."<br />It's a logger.</h2>
+      <p class="audit"><b>entire.io says it captures every agent session, prompt, and tool call and stores them with your commits</b> — by design, by default. That's a real feature. It is also a durable record of how you think once it is pushed with repo history. hookshield starts from the opposite default: local evidence first, sharing only when you choose.</p>
+    </div>
+
+    <div class="compare" role="table" aria-label="hookshield compared to entire.io">
+      <div class="crow" role="row">
+        <div class="label" role="columnheader">&nbsp;</div>
+        <div class="chead them" role="columnheader">entire.io</div>
+        <div class="chead us" role="columnheader">★ hookshield</div>
+      </div>
+      <div class="crow" role="row">
+        <div class="label" role="rowheader">Default</div>
+        <div class="col-them" role="cell">Captures agent sessions with commits</div>
+        <div class="col-us" role="cell"><b>Records locally, shares only by choice</b></div>
+      </div>
+      <div class="crow" role="row">
+        <div class="label" role="rowheader">Your prompts</div>
+        <div class="col-them" role="cell">"Every session, prompt, and tool call"</div>
+        <div class="col-us" role="cell"><b>Stays on your machine</b></div>
+      </div>
+      <div class="crow" role="row">
+        <div class="label" role="rowheader">Your dead-ends</div>
+        <div class="col-them" role="cell">Versioned repo context</div>
+        <div class="col-us" role="cell"><b>Private by default</b></div>
+      </div>
+      <div class="crow" role="row">
+        <div class="label" role="rowheader">Control</div>
+        <div class="col-them" role="cell">Capture first, redact secrets</div>
+        <div class="col-us" role="cell"><b>Review before anything leaves</b></div>
+      </div>
+      <div class="crow" role="row">
+        <div class="label" role="rowheader">The pitch</div>
+        <div class="col-them" role="cell">"Join the rebellion"</div>
+        <div class="col-us" role="cell"><b>Keep your mind yours</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="band" id="how">
+  <div class="container">
+    <p class="eyebrow"><span class="tick">▌</span> how it works</p>
+    <h2 class="head-2">A shield between your agent and your history.</h2>
+    <p class="sub-2">hookshield runs your agent command through a local wrapper, watches for risky session artifacts, and gives you a review point before that context becomes project history.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="no">01 — WRAP THE RUN</div>
+        <h3>One command, any repo.</h3>
+        <p>Initialize a local policy, then run your agent command through hookshield. It works with git-based repos and the agents you already run.</p>
+        <div class="tags"><span class="tag">Claude Code</span><span class="tag">Codex</span><span class="tag">Cursor</span><span class="tag">+ any</span></div>
+      </div>
+      <div class="step">
+        <div class="no">02 — PRIVATE BY DEFAULT</div>
+        <h3>Captured locally. Held back.</h3>
+        <p>Session metadata, file changes, risky artifacts, and observed network connections are recorded on your machine for review.</p>
+        <div class="tags"><span class="tag">local store</span><span class="tag">no CLI telemetry</span></div>
+      </div>
+      <div class="step">
+        <div class="no">03 — SHARE ON PURPOSE</div>
+        <h3>Promote only the signal.</h3>
+        <p>Quarantine or hold back risky artifacts, then share only the context you have intentionally reviewed.</p>
+        <div class="tags"><span class="tag">opt-in</span><span class="tag">strict mode</span></div>
+      </div>
+      <div class="step">
+        <div class="no">04 — FILTER WITH YOUR MODEL</div>
+        <h3>Bring your own reviewer.</h3>
+        <p>Choose manual review, or run the captured context through the LLM and filters you trust before anything is promoted.</p>
+        <div class="tags"><span class="tag">BYO LLM</span><span class="tag">custom filters</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta">
+  <div class="container">
+    <p class="eyebrow" style="justify-content:center"><span class="tick">▌</span> get it</p>
+    <h2>Review agent context before it ships.</h2>
+    <div class="install">
+      <a href="https://github.com/mimart0/hookshield" class="btn btn-ghost">★ Star on GitHub</a>
+    </div>
+    <p class="small">open source · MIT licensed · <a href="https://github.com/mimart0/hookshield">github.com/mimart0/hookshield</a></p>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="row">
+      <span class="wordmark">hookshield<span class="cursor" aria-hidden="true"></span></span>
+      <nav class="links">
+        <a href="#vs">vs. entire</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/mimart0/hookshield">GitHub</a>
+      </nav>
+      <span class="copy-line">© 2026 hookshield · local-first by default.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  /* ----- share / private toggles ----- */
+  var body = document.getElementById("doc-body");
+  var sN = document.getElementById("shared-n");
+  var pN = document.getElementById("private-n");
+  function recount(){
+    var lines = body.querySelectorAll(".line");
+    var s=0; lines.forEach(function(l){ if(l.classList.contains("shared")) s++; });
+    sN.textContent = s; pN.textContent = lines.length - s;
+  }
+  body.querySelectorAll(".line").forEach(function(line){
+    var t = line.querySelector(".toggle");
+    function set(shared){
+      line.classList.toggle("shared", shared);
+      t.setAttribute("aria-pressed", shared ? "true":"false");
+      t.lastChild.textContent = shared ? "shared" : "private";
+      recount();
+    }
+    t.addEventListener("click", function(){ set(!line.classList.contains("shared")); });
+  });
+  recount();
+})();
+</script>
+</body>
+</html>

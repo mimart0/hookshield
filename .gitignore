@@ -1,0 +1,10 @@
+.hookshield/sessions/
+.hookshield/quarantine/
+.hookshield/virtualized-hooks/
+.hooker/sessions/
+.hooker/quarantine/
+.hooker/virtualized-hooks/
+.hooker/home/
+node_modules/
+*.log
+*.enc

@@ -1,0 +1,22 @@
+# HookShield policy
+mode = "audit"
+
+encrypt.prompts = true
+encrypt.transcripts = true
+encrypt.reasoning = true
+encrypt.tool_calls = true
+
+allow_git_diffs = true
+allow_commit_ids = true
+warn_on_unknown_hooks = true
+deny_unencrypted_upload = true
+
+blocked_domains = [
+  "entire.io",
+  "www.entire.io",
+  "docs.entire.io"
+]
+
+allowed_domains = [
+  "github.com"
+]
