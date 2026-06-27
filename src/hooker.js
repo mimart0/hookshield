@@ -941,6 +941,94 @@ function inspectSessions() {
   return { projectRoot: projectRoot(), sessions };
 }
 
+function findSession(sessionId) {
+  const sessions = inspectSessions().sessions;
+  if (!sessionId) return sessions[0] || null;
+  return sessions.find((session) => session.session_id === sessionId || session.session_id.startsWith(sessionId)) || null;
+}
+
+function reviewItems({ sessionId } = {}) {
+  const session = findSession(sessionId);
+  if (!session) return { projectRoot: projectRoot(), session: null, items: [] };
+  const events = session.file_enforcement && Array.isArray(session.file_enforcement.events) ? session.file_enforcement.events : [];
+  const items = events
+    .filter((event) => event.quarantine_path)
+    .map((event) => {
+      const source = safeProjectPath(event.quarantine_path);
+      let size = null;
+      try {
+        size = source ? fs.statSync(source).size : null;
+      } catch (_) {
+        size = null;
+      }
+      return {
+        session_id: session.session_id,
+        path: event.path,
+        action: event.action,
+        reason: event.reason,
+        quarantine_path: event.quarantine_path,
+        exists: Boolean(source && fs.existsSync(source)),
+        size
+      };
+    });
+  return { projectRoot: projectRoot(), session: { session_id: session.session_id, created_at: session.created_at, command: session.argv || [session.tool_name] }, items };
+}
+
+function sanitizedDraftPath(sessionId, requestedPath) {
+  const safeRelative = String(requestedPath || "approved-context/session-summary.json")
+    .split(/[\\/]+/)
+    .filter((part) => part && part !== "." && part !== "..")
+    .join(path.sep);
+  if (!safeRelative) return null;
+  return path.join(projectRoot(), safeRelative);
+}
+
+function redactReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, outputPath }) {
+  const review = reviewItems({ sessionId });
+  if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
+  const item = requestedQuarantinePath
+    ? review.items.find((entry) => entry.quarantine_path === requestedQuarantinePath || entry.path === requestedQuarantinePath)
+    : review.items[0];
+  if (!item) throw new Error("No quarantined review item matched.");
+  const source = safeProjectPath(item.quarantine_path);
+  if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
+  const destination = sanitizedDraftPath(review.session.session_id, outputPath);
+  if (!destination) throw new Error("Unsafe output path.");
+  ensureDir(path.dirname(destination));
+  const draft = {
+    hookshield_review: {
+      session_id: review.session.session_id,
+      source_path: item.path,
+      quarantine_path: item.quarantine_path,
+      reason: item.reason,
+      created_at: new Date().toISOString(),
+      instructions: "Edit approved_context before promoting. Do not paste private prompts, secrets, credentials, customer data, or raw tool output."
+    },
+    summary: "",
+    approved_context: [],
+    withheld: [
+      "prompt",
+      "tool_calls",
+      "reasoning",
+      "secrets",
+      "credentials",
+      "customer_data"
+    ]
+  };
+  fs.writeFileSync(destination, `${JSON.stringify(draft, null, 2)}\n`, "utf8");
+  return { session_id: review.session.session_id, source: item.quarantine_path, output: relativeProjectPath(destination) };
+}
+
+function promoteReviewDraft({ draftPath, outputPath }) {
+  const source = safeProjectPath(draftPath);
+  const destination = safeProjectPath(outputPath);
+  if (!source || !destination) throw new Error("promote requires safe project-relative --draft and --out paths.");
+  if (!fs.existsSync(source)) throw new Error(`Draft file is missing: ${draftPath}`);
+  ensureDir(path.dirname(destination));
+  fs.copyFileSync(source, destination);
+  return { draft: relativeProjectPath(source), output: relativeProjectPath(destination) };
+}
+
 function status() {
   const audit = scan();
   return {
@@ -993,7 +1081,10 @@ module.exports = {
   initProject,
   inspectSessions,
   loadPolicy,
+  promoteReviewDraft,
   projectRoot,
+  redactReviewItem,
+  reviewItems,
   rotateKey,
   runCommand,
   scan,

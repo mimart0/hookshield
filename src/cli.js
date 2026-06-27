@@ -8,6 +8,9 @@ const {
   initProject,
   inspectSessions,
   loadPolicy,
+  promoteReviewDraft,
+  redactReviewItem,
+  reviewItems,
   rotateKey,
   runCommand,
   scan,
@@ -23,6 +26,9 @@ Usage:
   hookshield status [--json]
   hookshield run -- <command> [args...]
   hookshield inspect [--json] [--session <id>]
+  hookshield review [--json] [--session <id>]
+  hookshield redact [--session <id>] [--item <path>] [--out <path>]
+  hookshield promote --draft <path> --out <path>
   hookshield encrypt-file <path>
   hookshield decrypt-file <path.enc>
   hookshield rotate-key [--yes]
@@ -253,6 +259,42 @@ async function main(args) {
     } else {
       for (const session of sessions) printSessionSummary(session);
     }
+    return;
+  }
+
+  if (command === "review") {
+    const result = reviewItems({ sessionId: flagValue(args, "--session") });
+    if (hasFlag(args, "--json")) {
+      printJson(result);
+    } else if (!result.session) {
+      console.log("No HookShield sessions recorded.");
+    } else if (result.items.length === 0) {
+      console.log(`No quarantined review items for session ${result.session.session_id}.`);
+    } else {
+      console.log(`Session: ${result.session.session_id}`);
+      for (const item of result.items) {
+        console.log(`${item.exists ? "READY" : "MISSING"} ${item.path} -> ${item.quarantine_path} (${item.reason || "review"})`);
+      }
+    }
+    return;
+  }
+
+  if (command === "redact") {
+    const result = redactReviewItem({
+      sessionId: flagValue(args, "--session"),
+      quarantinePath: flagValue(args, "--item"),
+      outputPath: flagValue(args, "--out")
+    });
+    console.log(`Created sanitized draft ${result.output} from ${result.source}`);
+    return;
+  }
+
+  if (command === "promote") {
+    const result = promoteReviewDraft({
+      draftPath: flagValue(args, "--draft"),
+      outputPath: flagValue(args, "--out")
+    });
+    console.log(`Promoted ${result.draft} -> ${result.output}`);
     return;
   }
 

@@ -15,7 +15,7 @@ The CLI is open source, MIT licensed, and does not send telemetry. The public we
 - Samples child-process outbound sockets during wrapped runs.
 - Records project file creations, modifications, and deletions during wrapped runs.
 - Encrypts/decrypts files with AES-256-GCM.
-- Provides `status`, `inspect`, and `trust-report` commands.
+- Provides `status`, `inspect`, `review`, `redact`, `promote`, and `trust-report` commands.
 - In strict mode, virtualizes risky hooks/configs and quarantines high-risk artifacts for review.
 
 ## What It Does Not Do Yet
@@ -65,6 +65,7 @@ node /path/to/hookshield/bin/hookshield.js scan
 node /path/to/hookshield/bin/hookshield.js status
 node /path/to/hookshield/bin/hookshield.js run -- node --version
 node /path/to/hookshield/bin/hookshield.js inspect
+node /path/to/hookshield/bin/hookshield.js review
 node /path/to/hookshield/bin/hookshield.js trust-report
 ```
 
@@ -72,6 +73,15 @@ Inspect one session:
 
 ```bash
 node /path/to/hookshield/bin/hookshield.js inspect --session <session-id-prefix>
+```
+
+Review quarantined prompt/session artifacts:
+
+```bash
+node /path/to/hookshield/bin/hookshield.js review
+node /path/to/hookshield/bin/hookshield.js redact --session <session-id-prefix> --out approved-context/draft.json
+# edit approved-context/draft.json
+node /path/to/hookshield/bin/hookshield.js promote --draft approved-context/draft.json --out approved-context/session-summary.json
 ```
 
 Encrypt a session artifact:

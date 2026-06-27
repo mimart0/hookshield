@@ -269,6 +269,54 @@ test("strict file enforcement quarantines created high-risk files", async () => 
   });
 });
 
+test("review redaction flow drafts and promotes only approved context", async () => {
+  await withTempProject((root) => {
+    const sessionId = "session-review";
+    const promptPath = path.join(root, ".entire", "checkpoints", "prompt.json");
+    fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+    fs.writeFileSync(promptPath, JSON.stringify({
+      prompt: "PRIVATE PROMPT with token sk-live-123 and jane@example.com",
+      tool_calls: ["cat secrets.env"],
+      reasoning: "dead-end reasoning"
+    }, null, 2), "utf8");
+
+    const fileEvents = hooker._internals.annotateFileEvents([{
+      action: "created",
+      path: ".entire/checkpoints/prompt.json"
+    }]);
+    const enforcement = hooker._internals.enforceFilePolicy(fileEvents, { mode: "strict" }, sessionId);
+    const sessionsDir = path.join(root, ".hookshield", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.writeFileSync(path.join(sessionsDir, `${sessionId}.json`), JSON.stringify({
+      session_id: sessionId,
+      created_at: "2026-06-27T00:00:00Z",
+      tool_name: "node",
+      argv: ["node", "agent.js"],
+      file_enforcement: enforcement
+    }, null, 2), "utf8");
+
+    const review = hooker.reviewItems({ sessionId });
+    assert.equal(review.items.length, 1);
+    assert.equal(review.items[0].exists, true);
+    assert.equal(review.items[0].quarantine_path, ".hookshield/quarantine/session-review/.entire/checkpoints/prompt.json");
+
+    const draft = hooker.redactReviewItem({ sessionId, outputPath: "approved-context/draft.json" });
+    const draftPath = path.join(root, draft.output);
+    const draftContents = fs.readFileSync(draftPath, "utf8");
+    assert.doesNotMatch(draftContents, /sk-live-123|jane@example\.com|secrets\.env|dead-end reasoning|PRIVATE PROMPT/);
+
+    const edited = JSON.parse(draftContents);
+    edited.summary = "Auth middleware order fixed.";
+    edited.approved_context = ["Changed middleware ordering after local review."];
+    fs.writeFileSync(draftPath, `${JSON.stringify(edited, null, 2)}\n`, "utf8");
+
+    const promoted = hooker.promoteReviewDraft({ draftPath: "approved-context/draft.json", outputPath: "approved-context/session-summary.json" });
+    const promotedContents = fs.readFileSync(path.join(root, promoted.output), "utf8");
+    assert.match(promotedContents, /Auth middleware order fixed/);
+    assert.doesNotMatch(promotedContents, /sk-live-123|jane@example\.com|secrets\.env|dead-end reasoning|PRIVATE PROMPT/);
+  });
+});
+
 test("strict file enforcement copies modified high-risk files for review", async () => {
   await withTempProject((root) => {
     const settings = path.join(root, ".claude", "settings.json");
