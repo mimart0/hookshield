@@ -79,10 +79,13 @@ Review quarantined prompt/session artifacts:
 
 ```bash
 node /path/to/hookshield/bin/hookshield.js review
+node /path/to/hookshield/bin/hookshield.js reveal --session <session-id-prefix> --i-understand
 node /path/to/hookshield/bin/hookshield.js redact --session <session-id-prefix> --out approved-context/draft.json
 # edit approved-context/draft.json
 node /path/to/hookshield/bin/hookshield.js promote --draft approved-context/draft.json --out approved-context/session-summary.json
 ```
+
+`reveal` prints the raw quarantined item locally so you can manually decide what is safe to keep. `redact` still creates a sanitized draft by default; copy only approved details into `approved_context` before promoting.
 
 Encrypt a session artifact:
 

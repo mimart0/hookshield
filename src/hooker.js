@@ -1019,6 +1019,26 @@ function redactReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, 
   return { session_id: review.session.session_id, source: item.quarantine_path, output: relativeProjectPath(destination) };
 }
 
+function revealReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, confirm = false } = {}) {
+  if (!confirm) {
+    throw new Error("reveal prints raw quarantined prompt/session data. Re-run with --i-understand to confirm local viewing.");
+  }
+  const review = reviewItems({ sessionId });
+  if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
+  const item = requestedQuarantinePath
+    ? review.items.find((entry) => entry.quarantine_path === requestedQuarantinePath || entry.path === requestedQuarantinePath)
+    : review.items[0];
+  if (!item) throw new Error("No quarantined review item matched.");
+  const source = safeProjectPath(item.quarantine_path);
+  if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
+  return {
+    session_id: review.session.session_id,
+    source_path: item.path,
+    quarantine_path: item.quarantine_path,
+    content: fs.readFileSync(source, "utf8")
+  };
+}
+
 function promoteReviewDraft({ draftPath, outputPath }) {
   const source = safeProjectPath(draftPath);
   const destination = safeProjectPath(outputPath);
@@ -1084,6 +1104,7 @@ module.exports = {
   promoteReviewDraft,
   projectRoot,
   redactReviewItem,
+  revealReviewItem,
   reviewItems,
   rotateKey,
   runCommand,

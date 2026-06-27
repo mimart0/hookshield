@@ -10,6 +10,7 @@ const {
   loadPolicy,
   promoteReviewDraft,
   redactReviewItem,
+  revealReviewItem,
   reviewItems,
   rotateKey,
   runCommand,
@@ -27,6 +28,7 @@ Usage:
   hookshield run -- <command> [args...]
   hookshield inspect [--json] [--session <id>]
   hookshield review [--json] [--session <id>]
+  hookshield reveal --i-understand [--json] [--session <id>] [--item <path>]
   hookshield redact [--session <id>] [--item <path>] [--out <path>]
   hookshield promote --draft <path> --out <path>
   hookshield encrypt-file <path>
@@ -286,6 +288,23 @@ async function main(args) {
       outputPath: flagValue(args, "--out")
     });
     console.log(`Created sanitized draft ${result.output} from ${result.source}`);
+    return;
+  }
+
+  if (command === "reveal") {
+    const result = revealReviewItem({
+      sessionId: flagValue(args, "--session"),
+      quarantinePath: flagValue(args, "--item"),
+      confirm: hasFlag(args, "--i-understand")
+    });
+    if (hasFlag(args, "--json")) {
+      printJson(result);
+    } else {
+      console.log(`Raw quarantined item: ${result.source_path}`);
+      console.log(`Quarantine path: ${result.quarantine_path}`);
+      console.log("");
+      console.log(result.content);
+    }
     return;
   }
 

@@ -300,6 +300,11 @@ test("review redaction flow drafts and promotes only approved context", async ()
     assert.equal(review.items[0].exists, true);
     assert.equal(review.items[0].quarantine_path, ".hookshield/quarantine/session-review/.entire/checkpoints/prompt.json");
 
+    assert.throws(() => hooker.revealReviewItem({ sessionId }), /--i-understand/);
+    const revealed = hooker.revealReviewItem({ sessionId, confirm: true });
+    assert.match(revealed.content, /PRIVATE PROMPT with token sk-live-123/);
+    assert.match(revealed.content, /jane@example\.com/);
+
     const draft = hooker.redactReviewItem({ sessionId, outputPath: "approved-context/draft.json" });
     const draftPath = path.join(root, draft.output);
     const draftContents = fs.readFileSync(draftPath, "utf8");

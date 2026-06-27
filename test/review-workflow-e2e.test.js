@@ -93,6 +93,13 @@ test("CLI review workflow quarantines fake prompt data and promotes only approve
     assert.equal(reviewJson.items[0].path, ".entire/checkpoints/prompt.json");
 
     const sessionId = reviewJson.session.session_id;
+    const blockedReveal = runHookshield(root, home, ["reveal", "--session", sessionId], { expectedStatus: 1 });
+    assert.match(blockedReveal.stderr, /--i-understand/);
+
+    const reveal = runHookshield(root, home, ["reveal", "--session", sessionId, "--i-understand"]);
+    assert.match(reveal.stdout, /PRIVATE PROMPT: inspect secrets\.env/);
+    assert.match(reveal.stdout, /sk-live-e2e-12345/);
+
     runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/draft.json"]);
 
     const draftPath = path.join(root, "approved-context", "draft.json");
