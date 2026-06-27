@@ -165,6 +165,7 @@ Run only one layer:
 
 ```bash
 npm run test:node
+npm run test:e2e
 npm run test:native
 ```
 
