@@ -124,3 +124,53 @@ test("CLI review workflow quarantines fake prompt data and promotes only approve
     assertNoPrivateData(promotedContents);
   });
 });
+
+test("CLI review workflow quarantines Claude home transcript artifacts", () => {
+  withTempProject((root, home) => {
+    runHookshield(root, home, ["init"]);
+
+    const policyPath = path.join(root, "hookshield.toml");
+    fs.writeFileSync(
+      policyPath,
+      fs.readFileSync(policyPath, "utf8").replace('mode = "audit"', 'mode = "strict"'),
+      "utf8"
+    );
+
+    const fakeClaudeScript = [
+      "const fs = require('fs');",
+      "const os = require('os');",
+      "const path = require('path');",
+      "const transcript = path.join(os.homedir(), '.claude', 'projects', '-tmp-test', 'session.jsonl');",
+      "fs.mkdirSync(path.dirname(transcript), { recursive: true });",
+      "fs.writeFileSync(transcript, JSON.stringify({",
+      "  type: 'user',",
+      "  prompt: 'PRIVATE CLAUDE PROMPT: remind me about dads birthday',",
+      "  token: 'sk-live-claude-e2e-12345',",
+      "  tool_calls: ['cat secrets.env']",
+      "}) + '\\n');"
+    ].join("\n");
+
+    const wrappedRun = runHookshield(
+      root,
+      home,
+      ["run", "--", process.execPath, "-e", fakeClaudeScript],
+      { expectedStatus: 155 }
+    );
+    assert.equal(wrappedRun.stderr, "");
+    assert.equal(fs.existsSync(path.join(home, ".claude", "projects", "-tmp-test", "session.jsonl")), false);
+
+    const review = runHookshield(root, home, ["review", "--json"]);
+    const reviewJson = JSON.parse(review.stdout);
+    assert.equal(reviewJson.items.length, 1);
+    assert.equal(reviewJson.items[0].path, "~/.claude/projects/-tmp-test/session.jsonl");
+
+    const sessionId = reviewJson.session.session_id;
+    const reveal = runHookshield(root, home, ["reveal", "--session", sessionId, "--i-understand"]);
+    assert.match(reveal.stdout, /PRIVATE CLAUDE PROMPT: remind me about dads birthday/);
+    assert.match(reveal.stdout, /sk-live-claude-e2e-12345/);
+
+    runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/claude-draft.json"]);
+    const draft = fs.readFileSync(path.join(root, "approved-context", "claude-draft.json"), "utf8");
+    assert.doesNotMatch(draft, /PRIVATE CLAUDE PROMPT|sk-live-claude-e2e-12345|dads birthday|secrets\.env/);
+  });
+});

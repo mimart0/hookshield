@@ -138,7 +138,7 @@ func runPTY(args []string) runOutcome {
 	cmd.Env = os.Environ()
 	projectRoot := projectRootFromEnv()
 	cmd.Dir = projectRoot
-	filesBefore := snapshotFiles(projectRoot)
+	filesBefore := snapshotObservedFiles(projectRoot)
 
 	size := currentSize()
 	ptmx, err := pty.StartWithSize(cmd, size)
@@ -182,7 +182,7 @@ func runPTY(args []string) runOutcome {
 	_ = ptmx.Close()
 	<-copyDone
 	observedPIDs, connections, enforcementEvents := monitor.stop()
-	fileEvents := diffFileSnapshots(filesBefore, snapshotFiles(projectRoot))
+	fileEvents := diffFileSnapshots(filesBefore, snapshotObservedFiles(projectRoot))
 	enforced := len(enforcementEvents) > 0
 
 	if waitErr == nil {
@@ -462,6 +462,48 @@ func snapshotFiles(root string) map[string]fileSnapshotEntry {
 		return nil
 	})
 	return files
+}
+
+func snapshotObservedFiles(projectRoot string) map[string]fileSnapshotEntry {
+	files := snapshotFiles(projectRoot)
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return files
+	}
+
+	claudeRoot := filepath.Join(home, ".claude")
+	for _, target := range []string{
+		"projects",
+		"history.jsonl",
+		"settings.json",
+		"settings.local.json",
+		"todos",
+		"session-env",
+		"shell-snapshots",
+	} {
+		mergeSnapshotFiles(files, filepath.Join(claudeRoot, target), filepath.ToSlash(filepath.Join("~", ".claude", target)))
+	}
+	return files
+}
+
+func mergeSnapshotFiles(destination map[string]fileSnapshotEntry, root string, prefix string) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return
+	}
+	if info.Mode().IsRegular() {
+		destination[prefix] = fileSnapshotEntry{
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+		}
+		return
+	}
+	if !info.IsDir() {
+		return
+	}
+	for relative, entry := range snapshotFiles(root) {
+		destination[filepath.ToSlash(filepath.Join(prefix, relative))] = entry
+	}
 }
 
 func shouldSkipSnapshotDir(root string, currentPath string, name string) bool {

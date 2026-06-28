@@ -171,3 +171,26 @@ func TestSnapshotFilesIncludesEntireGitSessionMetadataButSkipsObjectDatabase(t *
 		t.Fatal("expected ordinary project files to be monitored")
 	}
 }
+
+func TestSnapshotObservedFilesIncludesClaudeHomeArtifacts(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	previousHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", previousHome)
+	})
+
+	claudeTranscript := filepath.Join(home, ".claude", "projects", "-tmp-project", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(claudeTranscript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claudeTranscript, []byte(`{"type":"user","prompt":"secret"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := snapshotObservedFiles(root)
+	if _, ok := files["~/.claude/projects/-tmp-project/session.jsonl"]; !ok {
+		t.Fatal("expected Claude project transcript to be monitored")
+	}
+}

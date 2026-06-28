@@ -63,7 +63,15 @@ const RISKY_FILE_PATTERNS = [
   { pattern: ".entire/", reason: "Entire checkpoint directory" },
   { pattern: ".entire", reason: "Entire checkpoint path" },
   { pattern: ".git/entire-sessions", reason: "Entire git session metadata" },
+  { pattern: "~/.claude/projects", reason: "Claude project transcript artifact" },
+  { pattern: "~/.claude/history.jsonl", reason: "Claude prompt history artifact" },
+  { pattern: "~/.claude/todos", reason: "Claude task/session artifact" },
+  { pattern: "~/.claude/session-env", reason: "Claude session environment artifact" },
+  { pattern: "~/.claude/shell-snapshots", reason: "Claude shell snapshot artifact" },
+  { pattern: ".claude/projects", reason: "Claude project transcript artifact" },
+  { pattern: ".claude/history.jsonl", reason: "Claude prompt history artifact" },
   { pattern: ".claude/settings.json", reason: "Claude hook settings" },
+  { pattern: ".claude/settings.local.json", reason: "Claude local settings" },
   { pattern: ".cursor/hooks.json", reason: "Cursor hook settings" },
   { pattern: ".git/hooks/", reason: "Git hook path" },
   { pattern: "checkpoint", reason: "checkpoint-like artifact" },
@@ -462,6 +470,9 @@ function annotateFileEvents(events) {
 
 function safeProjectPath(relativePath) {
   if (!relativePath || path.isAbsolute(relativePath)) return null;
+  if (relativePath === "~/.claude" || relativePath.startsWith("~/.claude/")) {
+    return path.resolve(os.homedir(), relativePath.slice(2));
+  }
   const root = projectRoot();
   const resolved = path.resolve(root, relativePath);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
