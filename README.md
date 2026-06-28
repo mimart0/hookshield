@@ -14,6 +14,7 @@ The CLI is open source, MIT licensed, and does not send telemetry. The public we
 - Records session metadata locally under `.hookshield/`.
 - Samples child-process outbound sockets during wrapped runs.
 - Records project file creations, modifications, and deletions during wrapped runs.
+- Watches Claude Code home artifacts such as `~/.claude/projects/...` during wrapped runs.
 - Encrypts/decrypts files with AES-256-GCM.
 - Provides `status`, `inspect`, `review`, `redact`, `promote`, and `trust-report` commands.
 - In strict mode, virtualizes risky hooks/configs and quarantines high-risk artifacts for review.
@@ -87,6 +88,23 @@ node /path/to/hookshield/bin/hookshield.js promote --draft approved-context/draf
 
 `reveal` prints the raw quarantined item locally so you can manually decide what is safe to keep. `redact` still creates a sanitized draft by default; copy only approved details into `approved_context` before promoting.
 
+## Claude Code
+
+HookShield can wrap Claude Code and review the local transcript artifacts Claude writes under `~/.claude/projects`.
+
+Example:
+
+```bash
+node /path/to/hookshield/bin/hookshield.js init
+# set mode = "strict" in hookshield.toml
+node /path/to/hookshield/bin/hookshield.js run -- claude -p "Reply with exactly HOOKSHIELD_CLAUDE_REAL_TEST. Do not use tools." --output-format json --permission-mode default
+node /path/to/hookshield/bin/hookshield.js review
+```
+
+In a real Claude Code test, Claude completed the API call, wrote a JSONL transcript under `~/.claude/projects/...`, and HookShield quarantined that transcript for local review. `reveal --i-understand` showed the raw prompt/session transcript locally; `redact` produced a draft that withheld the prompt, response, model/cost fields, and tool/agent listing.
+
+Strict file enforcement and strict network enforcement are separate. If you want Claude's API call to complete during a strict run, configure `allowed_domains` for the required provider endpoints or set `deny_unencrypted_upload = false` while testing file quarantine. File enforcement still quarantines Claude transcript artifacts when `mode = "strict"`.
+
 Encrypt a session artifact:
 
 ```bash
@@ -139,7 +157,7 @@ When strict mode is active, HookShield:
 - records enforcement events in `hookshield inspect`
 - temporarily virtualizes risky repo hooks and agent hook configs before launch
 - restores the original hook/config payloads after the wrapped command exits
-- quarantines newly created high-risk files such as `.entire/` checkpoints, transcripts, prompts, tool-call logs, and hook artifacts under `.hookshield/quarantine/<session-id>/`
+- quarantines newly created high-risk files such as `.entire/` checkpoints, Claude Code `~/.claude/projects` transcripts, prompts, tool-call logs, and hook artifacts under `.hookshield/quarantine/<session-id>/`
 - copies modified high-risk files into quarantine for review while preserving the original file in place
 - exits with code `155` when file enforcement triggers after an otherwise successful command
 
@@ -151,7 +169,7 @@ When strict mode is active, HookShield:
 - Crypto Engine: stores a local master key and encrypts files with AES-256-GCM.
 - Native PTY Runner: launches wrapped commands under `cmd/hookshield-pty` with real pseudoterminal ownership.
 - Network Monitor: samples the wrapped process tree with `lsof` and records outbound sockets.
-- File Monitor: snapshots project files before/after wrapped commands and records created, modified, and deleted files.
+- File Monitor: snapshots project files and selected agent home artifacts before/after wrapped commands and records created, modified, and deleted files.
 - Strict Network Enforcement: terminates wrapped processes that open blocked or unknown external connections in strict mode.
 - Strict File Enforcement: quarantines newly created high-risk artifacts in strict mode and fails the wrapped run for review.
 - Hook Payload Virtualization: replaces risky repo hooks and agent hook configs with inert stubs during strict-mode wrapped runs, preserving originals under `.hookshield/virtualized-hooks/<session-id>/`.
