@@ -11,6 +11,7 @@
     "test": "node --test && go test ./...",
     "test:node": "node --test",
     "test:e2e": "node --test test/review-workflow-e2e.test.js",
+    "test:claude:real": "node scripts/real-claude-e2e.js",
     "test:native": "go test ./...",
     "lint": "node --check bin/hookshield.js && node --check bin/hooker.js && node --check src/cli.js && node --check src/hooker.js"
   },

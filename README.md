@@ -14,6 +14,7 @@ The CLI is open source, MIT licensed, and does not send telemetry. The public we
 - Records session metadata locally under `.hookshield/`.
 - Samples child-process outbound sockets during wrapped runs.
 - Records project file creations, modifications, and deletions during wrapped runs.
+- Works with local AI coding CLIs when they are launched through `hookshield run -- ...`.
 - Watches Claude Code home artifacts such as `~/.claude/projects/...` during wrapped runs.
 - Encrypts/decrypts files with AES-256-GCM.
 - Provides `status`, `inspect`, `review`, `redact`, `promote`, and `trust-report` commands.
@@ -27,6 +28,7 @@ HookShield is an early MVP. It is useful for testing and review workflows, but i
 - It does not provide packet/firewall-level blocking before a socket opens.
 - It does not guarantee full DNS-history attribution for every IP-only socket.
 - Hook virtualization is preflight file isolation, not full hook execution tracing.
+- It cannot inspect hosted ChatGPT conversations that never create local files or run through the local wrapper.
 
 Use it as a local review point, not as a hardened isolation boundary.
 
@@ -104,6 +106,39 @@ node /path/to/hookshield/bin/hookshield.js review
 In a real Claude Code test, Claude completed the API call, wrote a JSONL transcript under `~/.claude/projects/...`, and HookShield quarantined that transcript for local review. `reveal --i-understand` showed the raw prompt/session transcript locally; `redact` produced a draft that withheld the prompt, response, model/cost fields, and tool/agent listing.
 
 Strict file enforcement and strict network enforcement are separate. If you want Claude's API call to complete during a strict run, configure `allowed_domains` for the required provider endpoints or set `deny_unencrypted_upload = false` while testing file quarantine. File enforcement still quarantines Claude transcript artifacts when `mode = "strict"`.
+
+Run the real Claude automation:
+
+```bash
+npm run test:claude:real
+```
+
+This test requires a working Claude Code login and makes a small API call. Set `CLAUDE_BIN=/path/to/claude` if `claude` is not on `PATH`. After verifying quarantine, the test copies Claude's real transcript back to `~/.claude` so it does not remove local Claude history. Set `HOOKSHIELD_KEEP_TMP=1` to keep the temporary test repo and quarantine files after a successful run.
+
+## OpenAI Codex
+
+HookShield can wrap local Codex-style coding sessions when the agent is launched as a command from your repo:
+
+```bash
+node /path/to/hookshield/bin/hookshield.js init
+# set mode = "strict" in hookshield.toml
+node /path/to/hookshield/bin/hookshield.js run -- codex
+node /path/to/hookshield/bin/hookshield.js review
+```
+
+During a wrapped Codex run, HookShield records the process tree, outbound sockets, and file changes visible from the local machine. In strict mode it quarantines newly created high-risk artifacts, including prompt-like files, transcript-like files, tool-call logs, checkpoints, git hook payloads, and known reporting artifacts.
+
+If your Codex setup is launched by another desktop app instead of a shell command, run the underlying CLI or test command through `hookshield run -- ...` for coverage. HookShield only observes processes it starts.
+
+## ChatGPT
+
+HookShield is a local tool, so ChatGPT coverage depends on where the session data lives:
+
+- Local or CLI-driven ChatGPT/OpenAI coding workflows can be wrapped with `hookshield run -- <command>`.
+- Browser-only ChatGPT conversations at `chatgpt.com` are not visible to HookShield unless they produce local files in the watched project or selected agent artifact paths.
+- Exported transcripts, copied prompts, generated session logs, or local files created by ChatGPT-driven tooling can still be reviewed if they are inside the project or created during a wrapped run.
+
+For hosted ChatGPT, treat HookShield as a local review layer for files and tool output, not as a browser account monitor.
 
 Encrypt a session artifact:
 
@@ -187,8 +222,11 @@ Run only one layer:
 ```bash
 npm run test:node
 npm run test:e2e
+npm run test:claude:real
 npm run test:native
 ```
+
+`test:claude:real` is opt-in because it requires local Claude Code auth, network access, and a small paid API call.
 
 Run syntax checks:
 
