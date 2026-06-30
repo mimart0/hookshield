@@ -49,7 +49,7 @@ function runHookshield(root, home, args, options = {}) {
 
 function assertNoPrivateData(contents) {
   assert.doesNotMatch(contents, /PRIVATE PROMPT/);
-  assert.doesNotMatch(contents, /sk-live-e2e-12345/);
+  assert.doesNotMatch(contents, /HOOKSHIELD_TEST_MARKER_E2E_12345/);
   assert.doesNotMatch(contents, /jane@example\.com/);
   assert.doesNotMatch(contents, /secrets\.env/);
   assert.doesNotMatch(contents, /dead-end reasoning/);
@@ -71,7 +71,7 @@ test("CLI review workflow quarantines fake prompt data and promotes only approve
       "fs.mkdirSync('.entire/checkpoints', { recursive: true });",
       "fs.writeFileSync('.entire/checkpoints/prompt.json', JSON.stringify({",
       "  prompt: 'PRIVATE PROMPT: inspect secrets.env and customer data',",
-      "  token: 'sk-live-e2e-12345',",
+      "  private_marker: 'HOOKSHIELD_TEST_MARKER_E2E_12345',",
       "  email: 'jane@example.com',",
       "  tool_calls: ['cat secrets.env'],",
       "  reasoning: 'dead-end reasoning that should not ship'",
@@ -99,7 +99,7 @@ test("CLI review workflow quarantines fake prompt data and promotes only approve
 
     const reveal = runHookshield(root, home, ["reveal", "--session", sessionId, "--i-understand"]);
     assert.match(reveal.stdout, /PRIVATE PROMPT: inspect secrets\.env/);
-    assert.match(reveal.stdout, /sk-live-e2e-12345/);
+    assert.match(reveal.stdout, /HOOKSHIELD_TEST_MARKER_E2E_12345/);
 
     runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/draft.json"]);
 
@@ -191,7 +191,7 @@ test("CLI review workflow quarantines Claude home transcript artifacts", () => {
       "fs.writeFileSync(transcript, JSON.stringify({",
       "  type: 'user',",
       "  prompt: 'PRIVATE CLAUDE PROMPT: remind me about dads birthday',",
-      "  token: 'sk-live-claude-e2e-12345',",
+      "  private_marker: 'HOOKSHIELD_TEST_MARKER_CLAUDE_E2E_12345',",
       "  tool_calls: ['cat secrets.env']",
       "}) + '\\n');"
     ].join("\n");
@@ -213,11 +213,11 @@ test("CLI review workflow quarantines Claude home transcript artifacts", () => {
     const sessionId = reviewJson.session.session_id;
     const reveal = runHookshield(root, home, ["reveal", "--session", sessionId, "--i-understand"]);
     assert.match(reveal.stdout, /PRIVATE CLAUDE PROMPT: remind me about dads birthday/);
-    assert.match(reveal.stdout, /sk-live-claude-e2e-12345/);
+    assert.match(reveal.stdout, /HOOKSHIELD_TEST_MARKER_CLAUDE_E2E_12345/);
 
     runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/claude-draft.json"]);
     const draft = fs.readFileSync(path.join(root, "approved-context", "claude-draft.json"), "utf8");
-    assert.doesNotMatch(draft, /PRIVATE CLAUDE PROMPT|sk-live-claude-e2e-12345|dads birthday|secrets\.env/);
+    assert.doesNotMatch(draft, /PRIVATE CLAUDE PROMPT|HOOKSHIELD_TEST_MARKER_CLAUDE_E2E_12345|dads birthday|secrets\.env/);
   });
 });
 
@@ -241,7 +241,7 @@ test("CLI review workflow quarantines Gemini home session artifacts", () => {
       "fs.writeFileSync(transcript, JSON.stringify({",
       "  prompt: 'PRIVATE GEMINI PROMPT: remind me about dads birthday',",
       "  response: 'HOOKSHIELD_GEMINI_REAL_TEST',",
-      "  token: 'sk-live-gemini-e2e-12345',",
+      "  private_marker: 'HOOKSHIELD_TEST_MARKER_GEMINI_E2E_12345',",
       "  tool_calls: ['cat secrets.env']",
       "}, null, 2));"
     ].join("\n");
@@ -268,7 +268,7 @@ test("CLI review workflow quarantines Gemini home session artifacts", () => {
 
     runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/gemini-draft.json"]);
     const draft = fs.readFileSync(path.join(root, "approved-context", "gemini-draft.json"), "utf8");
-    assert.doesNotMatch(draft, /PRIVATE GEMINI PROMPT|HOOKSHIELD_GEMINI_REAL_TEST|sk-live-gemini-e2e-12345|dads birthday|secrets\.env/);
+    assert.doesNotMatch(draft, /PRIVATE GEMINI PROMPT|HOOKSHIELD_GEMINI_REAL_TEST|HOOKSHIELD_TEST_MARKER_GEMINI_E2E_12345|dads birthday|secrets\.env/);
   });
 });
 
@@ -292,7 +292,7 @@ test("CLI review workflow quarantines Codex home session artifacts", () => {
       "fs.writeFileSync(transcript, JSON.stringify({",
       "  type: 'user_message',",
       "  prompt: 'PRIVATE CODEX PROMPT: remind me about dads birthday',",
-      "  token: 'sk-live-codex-e2e-12345',",
+      "  private_marker: 'HOOKSHIELD_TEST_MARKER_CODEX_E2E_12345',",
       "  tool_calls: ['cat secrets.env']",
       "}) + '\\n');"
     ].join("\n");
@@ -315,11 +315,11 @@ test("CLI review workflow quarantines Codex home session artifacts", () => {
     const sessionId = reviewJson.session.session_id;
     const reveal = runHookshield(root, home, ["reveal", "--session", sessionId, "--i-understand"]);
     assert.match(reveal.stdout, /PRIVATE CODEX PROMPT: remind me about dads birthday/);
-    assert.match(reveal.stdout, /sk-live-codex-e2e-12345/);
+    assert.match(reveal.stdout, /HOOKSHIELD_TEST_MARKER_CODEX_E2E_12345/);
 
     runHookshield(root, home, ["redact", "--session", sessionId, "--out", "approved-context/codex-draft.json"]);
     const draft = fs.readFileSync(path.join(root, "approved-context", "codex-draft.json"), "utf8");
-    assert.doesNotMatch(draft, /PRIVATE CODEX PROMPT|sk-live-codex-e2e-12345|dads birthday|secrets\.env/);
+    assert.doesNotMatch(draft, /PRIVATE CODEX PROMPT|HOOKSHIELD_TEST_MARKER_CODEX_E2E_12345|dads birthday|secrets\.env/);
   });
 });
 
