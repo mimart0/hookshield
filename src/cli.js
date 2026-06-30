@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  approveReviewItem,
   encryptFile,
   decryptFile,
   exportKey,
@@ -30,6 +31,7 @@ Usage:
   hookshield review [--json] [--session <id>]
   hookshield reveal --i-understand [--json] [--session <id>] [--item <path>]
   hookshield redact [--session <id>] [--item <path>] [--out <path>]
+  hookshield approve [--session <id>] [--item <number|path>] --keep <text> [--keep <text>...] [--summary <text>] --out <path>
   hookshield promote --draft <path> --out <path>
   hookshield encrypt-file <path>
   hookshield decrypt-file <path.enc>
@@ -58,6 +60,17 @@ function flagValue(args, flag) {
   const index = args.indexOf(flag);
   if (index === -1) return null;
   return args[index + 1] || null;
+}
+
+function flagValues(args, flag) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === flag && args[index + 1]) {
+      values.push(args[index + 1]);
+      index += 1;
+    }
+  }
+  return values;
 }
 
 function printJson(value) {
@@ -274,8 +287,12 @@ async function main(args) {
       console.log(`No quarantined review items for session ${result.session.session_id}.`);
     } else {
       console.log(`Session: ${result.session.session_id}`);
-      for (const item of result.items) {
-        console.log(`${item.exists ? "READY" : "MISSING"} ${item.path} -> ${item.quarantine_path} (${item.reason || "review"})`);
+      result.items.forEach((item, index) => {
+        console.log(`[${index + 1}] ${item.exists ? "READY" : "MISSING"} ${item.path} -> ${item.quarantine_path} (${item.reason || "review"})`);
+      });
+      if (result.items.length > 0) {
+        console.log("");
+        console.log("Use --item <number> with reveal, redact, or approve.");
       }
     }
     return;
@@ -288,6 +305,20 @@ async function main(args) {
       outputPath: flagValue(args, "--out")
     });
     console.log(`Created sanitized draft ${result.output} from ${result.source}`);
+    return;
+  }
+
+  if (command === "approve") {
+    const outputPath = flagValue(args, "--out");
+    if (!outputPath) throw new Error("approve requires --out <path>.");
+    const result = approveReviewItem({
+      sessionId: flagValue(args, "--session"),
+      quarantinePath: flagValue(args, "--item"),
+      outputPath,
+      summary: flagValue(args, "--summary") || "",
+      approvedContext: flagValues(args, "--keep")
+    });
+    console.log(`Approved ${result.approved_context_count} kept note(s) from ${result.source} -> ${result.output}`);
     return;
   }
 

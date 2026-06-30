@@ -483,6 +483,29 @@ func snapshotObservedFiles(projectRoot string) map[string]fileSnapshotEntry {
 	} {
 		mergeSnapshotFiles(files, filepath.Join(claudeRoot, target), filepath.ToSlash(filepath.Join("~", ".claude", target)))
 	}
+
+	geminiRoot := filepath.Join(home, ".gemini")
+	for _, target := range []string{
+		"tmp",
+		"settings.json",
+		".env",
+		"mcp-oauth-tokens.json",
+		"agents",
+		"skills",
+		"policies",
+	} {
+		mergeSnapshotFiles(files, filepath.Join(geminiRoot, target), filepath.ToSlash(filepath.Join("~", ".gemini", target)))
+	}
+	mergeMatchingRootFiles(files, geminiRoot, filepath.ToSlash(filepath.Join("~", ".gemini")), []string{"projects.json"})
+
+	codexRoot := filepath.Join(home, ".codex")
+	for _, target := range []string{
+		"sessions",
+		"session_index.jsonl",
+		"shell_snapshots",
+	} {
+		mergeSnapshotFiles(files, filepath.Join(codexRoot, target), filepath.ToSlash(filepath.Join("~", ".codex", target)))
+	}
 	return files
 }
 
@@ -503,6 +526,36 @@ func mergeSnapshotFiles(destination map[string]fileSnapshotEntry, root string, p
 	}
 	for relative, entry := range snapshotFiles(root) {
 		destination[filepath.ToSlash(filepath.Join(prefix, relative))] = entry
+	}
+}
+
+func mergeMatchingRootFiles(destination map[string]fileSnapshotEntry, root string, prefix string, prefixes []string) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		matched := false
+		for _, candidate := range prefixes {
+			if entry.Name() == candidate || strings.HasPrefix(entry.Name(), candidate+".") {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		destination[filepath.ToSlash(filepath.Join(prefix, entry.Name()))] = fileSnapshotEntry{
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+		}
 	}
 }
 

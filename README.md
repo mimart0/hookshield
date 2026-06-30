@@ -15,7 +15,7 @@ The CLI is open source, MIT licensed, and does not send telemetry. The public we
 - Samples child-process outbound sockets during wrapped runs.
 - Records project file creations, modifications, and deletions during wrapped runs.
 - Works with local AI coding CLIs when they are launched through `hookshield run -- ...`.
-- Watches Claude Code home artifacts such as `~/.claude/projects/...` during wrapped runs.
+- Watches known local agent artifacts during wrapped runs, including Claude `~/.claude/projects/...`, Gemini `~/.gemini/tmp/...`, and Codex `~/.codex/sessions/...`.
 - Encrypts/decrypts files with AES-256-GCM.
 - Provides `status`, `inspect`, `review`, `redact`, `promote`, and `trust-report` commands.
 - In strict mode, virtualizes risky hooks/configs and quarantines high-risk artifacts for review.
@@ -35,6 +35,11 @@ Use it as a local review point, not as a hardened isolation boundary.
 ## Install From Source
 
 This project is not published as a stable package yet. To try the current source build:
+
+Prerequisites:
+
+- Node 20 or newer
+- Go, for the native PTY backend and native tests
 
 ```bash
 gh repo clone mimart0/hookshield
@@ -82,13 +87,14 @@ Review quarantined prompt/session artifacts:
 
 ```bash
 node /path/to/hookshield/bin/hookshield.js review
-node /path/to/hookshield/bin/hookshield.js reveal --session <session-id-prefix> --i-understand
-node /path/to/hookshield/bin/hookshield.js redact --session <session-id-prefix> --out approved-context/draft.json
+node /path/to/hookshield/bin/hookshield.js reveal --session <session-id-prefix> --item 2 --i-understand
+node /path/to/hookshield/bin/hookshield.js approve --session <session-id-prefix> --item 2 --keep "Safe summary of what changed." --out approved-context/session-summary.json
+node /path/to/hookshield/bin/hookshield.js redact --session <session-id-prefix> --item 2 --out approved-context/draft.json
 # edit approved-context/draft.json
 node /path/to/hookshield/bin/hookshield.js promote --draft approved-context/draft.json --out approved-context/session-summary.json
 ```
 
-`reveal` prints the raw quarantined item locally so you can manually decide what is safe to keep. `redact` still creates a sanitized draft by default; copy only approved details into `approved_context` before promoting.
+`review` numbers each quarantined item, so `--item 2` can be used with `reveal`, `redact`, or `approve`. `reveal` prints the raw quarantined item locally so you can manually decide what is safe to keep. `approve` writes only explicit `--keep` notes into approved context. `redact` still creates a sanitized draft when you want to edit JSON before promoting.
 
 ## Claude Code
 
@@ -107,13 +113,16 @@ In a real Claude Code test, Claude completed the API call, wrote a JSONL transcr
 
 Strict file enforcement and strict network enforcement are separate. If you want Claude's API call to complete during a strict run, configure `allowed_domains` for the required provider endpoints or set `deny_unencrypted_upload = false` while testing file quarantine. File enforcement still quarantines Claude transcript artifacts when `mode = "strict"`.
 
-Run the real Claude automation:
+Run the real Claude automations:
 
 ```bash
 npm run test:claude:real
+npm run test:claude:batch:real
 ```
 
-This test requires a working Claude Code login and makes a small API call. Set `CLAUDE_BIN=/path/to/claude` if `claude` is not on `PATH`. After verifying quarantine, the test copies Claude's real transcript back to `~/.claude` so it does not remove local Claude history. Set `HOOKSHIELD_KEEP_TMP=1` to keep the temporary test repo and quarantine files after a successful run.
+`test:claude:real` requires a working Claude Code login and makes a small API call through the Claude CLI. Set `CLAUDE_BIN=/path/to/claude` if `claude` is not on `PATH`. After verifying quarantine, the test copies Claude's real transcript back to `~/.claude` so it does not remove local Claude history.
+
+`test:claude:batch:real` uses the Anthropic Messages API directly instead of the Claude CLI. It requires `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`, makes five small API calls, writes Claude-shaped local transcript artifacts in a temporary home directory, quarantines all five, and approves only prompts 2 and 4.
 
 ## OpenAI Codex
 
@@ -129,6 +138,36 @@ node /path/to/hookshield/bin/hookshield.js review
 During a wrapped Codex run, HookShield records the process tree, outbound sockets, and file changes visible from the local machine. In strict mode it quarantines newly created high-risk artifacts, including prompt-like files, transcript-like files, tool-call logs, checkpoints, git hook payloads, and known reporting artifacts.
 
 If your Codex setup is launched by another desktop app instead of a shell command, run the underlying CLI or test command through `hookshield run -- ...` for coverage. HookShield only observes processes it starts.
+
+Run the real Codex-style OpenAI batch automation:
+
+```bash
+npm run test:codex:batch:real
+```
+
+This uses the OpenAI Responses API and writes Codex-shaped local session artifacts under a temporary `~/.codex/sessions/...` directory. It requires `OPENAI_API_KEY`, makes five small API calls, quarantines all five artifacts, and approves only prompts 2 and 4. The default OpenAI model follows the current OpenAI latest-model guidance; override it with `OPENAI_MODEL` if your account uses a different model.
+
+## Real Provider Batch Tests
+
+The real batch tests are designed to exercise the full review loop without relying on provider CLIs staying attached to HookShield. Each test makes five real API calls, writes local provider-shaped session artifacts into a temporary home directory, lets HookShield quarantine all five, reveals and redacts each artifact, and promotes only sanitized notes for prompts 2 and 4.
+
+Configure the keys you want to test:
+
+```bash
+export GEMINI_API_KEY=...
+export ANTHROPIC_API_KEY=...
+export OPENAI_API_KEY=...
+```
+
+Run the batch tests:
+
+```bash
+npm run test:gemini:batch:real
+npm run test:claude:batch:real
+npm run test:codex:batch:real
+```
+
+Provider model overrides are available with `GEMINI_MODEL`, `CLAUDE_MODEL`, and `OPENAI_MODEL`. Use `HOOKSHIELD_KEEP_TMP=1` to keep the temporary project and quarantine files after a successful run.
 
 ## ChatGPT
 
@@ -192,7 +231,7 @@ When strict mode is active, HookShield:
 - records enforcement events in `hookshield inspect`
 - temporarily virtualizes risky repo hooks and agent hook configs before launch
 - restores the original hook/config payloads after the wrapped command exits
-- quarantines newly created high-risk files such as `.entire/` checkpoints, Claude Code `~/.claude/projects` transcripts, prompts, tool-call logs, and hook artifacts under `.hookshield/quarantine/<session-id>/`
+- quarantines newly created high-risk files such as `.entire/` checkpoints, Claude Code `~/.claude/projects` transcripts, Gemini `~/.gemini/tmp` sessions, Codex `~/.codex/sessions` transcripts, prompts, tool-call logs, and hook artifacts under `.hookshield/quarantine/<session-id>/`
 - copies modified high-risk files into quarantine for review while preserving the original file in place
 - exits with code `155` when file enforcement triggers after an otherwise successful command
 
@@ -223,10 +262,14 @@ Run only one layer:
 npm run test:node
 npm run test:e2e
 npm run test:claude:real
+npm run test:claude:batch:real
+npm run test:codex:batch:real
+npm run test:gemini:real
+npm run test:gemini:batch:real
 npm run test:native
 ```
 
-`test:claude:real` is opt-in because it requires local Claude Code auth, network access, and a small paid API call.
+The `*:real` scripts are opt-in because they require provider auth, network access, Node 20+, and small paid API calls. The batch real tests quarantine five provider-shaped local artifacts and promote only two sanitized review drafts.
 
 Run syntax checks:
 

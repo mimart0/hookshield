@@ -54,6 +54,13 @@ const SCAN_TARGETS = [
   ".entire/settings.json",
   ".claude/settings.json",
   ".claude/agents",
+  ".codex/sessions",
+  ".codex/session_index.jsonl",
+  ".codex/shell_snapshots",
+  ".gemini/settings.json",
+  ".gemini/tmp",
+  ".gemini/skills",
+  ".gemini/agents",
   ".cursor/hooks.json",
   ".git/entire-sessions",
   ".git/hooks"
@@ -72,6 +79,20 @@ const RISKY_FILE_PATTERNS = [
   { pattern: ".claude/history.jsonl", reason: "Claude prompt history artifact" },
   { pattern: ".claude/settings.json", reason: "Claude hook settings" },
   { pattern: ".claude/settings.local.json", reason: "Claude local settings" },
+  { pattern: "~/.codex/sessions", reason: "Codex session transcript artifact" },
+  { pattern: "~/.codex/session_index.jsonl", reason: "Codex session index artifact" },
+  { pattern: "~/.codex/shell_snapshots", reason: "Codex shell snapshot artifact" },
+  { pattern: ".codex/sessions", reason: "Codex workspace session artifact" },
+  { pattern: ".codex/session_index.jsonl", reason: "Codex workspace session index" },
+  { pattern: ".codex/shell_snapshots", reason: "Codex workspace shell snapshot" },
+  { pattern: "~/.gemini/tmp", reason: "Gemini session artifact" },
+  { pattern: "~/.gemini/projects.json", reason: "Gemini project metadata artifact" },
+  { pattern: "~/.gemini/settings.json", reason: "Gemini settings artifact" },
+  { pattern: "~/.gemini/.env", reason: "Gemini environment secret artifact" },
+  { pattern: "~/.gemini/mcp-oauth-tokens.json", reason: "Gemini OAuth token artifact" },
+  { pattern: ".gemini/tmp", reason: "Gemini workspace session artifact" },
+  { pattern: ".gemini/settings.json", reason: "Gemini workspace settings" },
+  { pattern: ".gemini/.env", reason: "Gemini workspace environment secret artifact" },
   { pattern: ".cursor/hooks.json", reason: "Cursor hook settings" },
   { pattern: ".git/hooks/", reason: "Git hook path" },
   { pattern: "checkpoint", reason: "checkpoint-like artifact" },
@@ -109,6 +130,108 @@ function readIfFile(filePath) {
   } catch (_) {
     return null;
   }
+}
+
+function snapshotFileEntry(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile()) return null;
+    return { size: stat.size, mtimeMs: stat.mtimeMs };
+  } catch (_) {
+    return null;
+  }
+}
+
+function shouldSkipSnapshotPath(filePath) {
+  const name = path.basename(filePath);
+  return name === ".git" || name === ".hookshield" || name === "node_modules" || name === ".DS_Store";
+}
+
+function snapshotPathRecursive(result, absolutePath, displayPath) {
+  let stat = null;
+  try {
+    stat = fs.statSync(absolutePath);
+  } catch (_) {
+    return;
+  }
+
+  if (stat.isFile()) {
+    result.set(displayPath, { size: stat.size, mtimeMs: stat.mtimeMs });
+    return;
+  }
+  if (!stat.isDirectory() || shouldSkipSnapshotPath(absolutePath)) return;
+
+  let entries = [];
+  try {
+    entries = fs.readdirSync(absolutePath);
+  } catch (_) {
+    return;
+  }
+  for (const entry of entries) {
+    const childAbsolute = path.join(absolutePath, entry);
+    if (shouldSkipSnapshotPath(childAbsolute)) continue;
+    snapshotPathRecursive(result, childAbsolute, `${displayPath}/${entry}`);
+  }
+}
+
+function snapshotObservedFilesJs(root) {
+  const result = new Map();
+  snapshotPathRecursive(result, root, ".");
+
+  const home = os.homedir();
+  for (const relativePath of [
+    ".claude/projects",
+    ".claude/shell-snapshots",
+    ".claude/history.jsonl",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".codex/sessions",
+    ".codex/session_index.jsonl",
+    ".codex/shell_snapshots",
+    ".gemini/tmp",
+    ".gemini/projects.json",
+    ".gemini/settings.json",
+    ".gemini/.env",
+    ".gemini/mcp-oauth-tokens.json"
+  ]) {
+    snapshotPathRecursive(result, path.join(home, relativePath), `~/${relativePath}`);
+  }
+
+  return result;
+}
+
+function diffObservedFileSnapshots(before, after) {
+  const events = [];
+  for (const [filePath, afterEntry] of after.entries()) {
+    const beforeEntry = before.get(filePath);
+    if (!beforeEntry) {
+      events.push({
+        action: "created",
+        path: filePath,
+        size_before: null,
+        size_after: afterEntry.size
+      });
+      continue;
+    }
+    if (beforeEntry.size !== afterEntry.size || beforeEntry.mtimeMs !== afterEntry.mtimeMs) {
+      events.push({
+        action: "modified",
+        path: filePath,
+        size_before: beforeEntry.size,
+        size_after: afterEntry.size
+      });
+    }
+  }
+  for (const [filePath, beforeEntry] of before.entries()) {
+    if (after.has(filePath)) continue;
+    events.push({
+      action: "deleted",
+      path: filePath,
+      size_before: beforeEntry.size,
+      size_after: null
+    });
+  }
+  return events;
 }
 
 function walkFiles(root, limit = 250) {
@@ -473,6 +596,12 @@ function safeProjectPath(relativePath) {
   if (relativePath === "~/.claude" || relativePath.startsWith("~/.claude/")) {
     return path.resolve(os.homedir(), relativePath.slice(2));
   }
+  if (relativePath === "~/.codex" || relativePath.startsWith("~/.codex/")) {
+    return path.resolve(os.homedir(), relativePath.slice(2));
+  }
+  if (relativePath === "~/.gemini" || relativePath.startsWith("~/.gemini/")) {
+    return path.resolve(os.homedir(), relativePath.slice(2));
+  }
   const root = projectRoot();
   const resolved = path.resolve(root, relativePath);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
@@ -820,7 +949,7 @@ async function runCommand(command) {
     return runNativeCommand(command, sessionId, metadata, policy, policyHosts);
   }
 
-  return runNodeCommand(command, sessionId, metadata);
+  return runNodeCommand(command, sessionId, metadata, policy);
 }
 
 function runNativeCommand(command, sessionId, metadata, policy, policyHosts) {
@@ -904,7 +1033,8 @@ function runNativeCommand(command, sessionId, metadata, policy, policyHosts) {
   });
 }
 
-function runNodeCommand(command, sessionId, metadata) {
+function runNodeCommand(command, sessionId, metadata, policy) {
+  const filesBefore = snapshotObservedFilesJs(projectRoot());
   return new Promise((resolve, reject) => {
     const child = spawn(command[0], command.slice(1), {
       stdio: "inherit",
@@ -923,17 +1053,23 @@ function runNodeCommand(command, sessionId, metadata) {
       reject(error);
     });
     child.on("close", (code, signal) => {
+      const fileEvents = annotateFileEvents(diffObservedFileSnapshots(filesBefore, snapshotObservedFilesJs(projectRoot())));
+      const fileEnforcement = enforceFilePolicy(fileEvents, policy, sessionId);
       const hookVirtualization = restoreHookPayloads(metadata.hook_virtualization);
+      const childExitCode = code ?? 1;
+      const finalExitCode = fileEnforcement.triggered && childExitCode === 0 ? 155 : childExitCode;
       const finished = {
         ...metadata,
         hook_virtualization: hookVirtualization,
         backend: "node-stdio",
+        file_events: fileEvents,
+        file_enforcement: fileEnforcement,
         finished_at: new Date().toISOString(),
-        exit_code: code,
+        exit_code: finalExitCode,
         signal
       };
       fs.writeFileSync(sessionFile(sessionId), JSON.stringify(finished, null, 2), "utf8");
-      resolve({ sessionId, exitCode: code ?? 1, signal });
+      resolve({ sessionId, exitCode: finalExitCode, signal });
     });
   });
 }
@@ -994,19 +1130,16 @@ function sanitizedDraftPath(sessionId, requestedPath) {
   return path.join(projectRoot(), safeRelative);
 }
 
-function redactReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, outputPath }) {
-  const review = reviewItems({ sessionId });
-  if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
-  const item = requestedQuarantinePath
-    ? review.items.find((entry) => entry.quarantine_path === requestedQuarantinePath || entry.path === requestedQuarantinePath)
-    : review.items[0];
-  if (!item) throw new Error("No quarantined review item matched.");
-  const source = safeProjectPath(item.quarantine_path);
-  if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
-  const destination = sanitizedDraftPath(review.session.session_id, outputPath);
-  if (!destination) throw new Error("Unsafe output path.");
-  ensureDir(path.dirname(destination));
-  const draft = {
+function selectReviewItem(review, requestedItem) {
+  if (!requestedItem) return review.items[0];
+  if (/^\d+$/.test(String(requestedItem))) {
+    return review.items[Number(requestedItem) - 1];
+  }
+  return review.items.find((entry) => entry.quarantine_path === requestedItem || entry.path === requestedItem);
+}
+
+function sanitizedReviewDraft(review, item) {
+  return {
     hookshield_review: {
       session_id: review.session.session_id,
       source_path: item.path,
@@ -1026,8 +1159,41 @@ function redactReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, 
       "customer_data"
     ]
   };
+}
+
+function redactReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, outputPath }) {
+  const review = reviewItems({ sessionId });
+  if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
+  const item = selectReviewItem(review, requestedQuarantinePath);
+  if (!item) throw new Error("No quarantined review item matched.");
+  const source = safeProjectPath(item.quarantine_path);
+  if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
+  const destination = sanitizedDraftPath(review.session.session_id, outputPath);
+  if (!destination) throw new Error("Unsafe output path.");
+  ensureDir(path.dirname(destination));
+  const draft = sanitizedReviewDraft(review, item);
   fs.writeFileSync(destination, `${JSON.stringify(draft, null, 2)}\n`, "utf8");
   return { session_id: review.session.session_id, source: item.quarantine_path, output: relativeProjectPath(destination) };
+}
+
+function approveReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, outputPath, summary = "", approvedContext = [] }) {
+  const review = reviewItems({ sessionId });
+  if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
+  const item = selectReviewItem(review, requestedQuarantinePath);
+  if (!item) throw new Error("No quarantined review item matched.");
+  const source = safeProjectPath(item.quarantine_path);
+  if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
+  if (!Array.isArray(approvedContext) || approvedContext.length === 0) {
+    throw new Error("approve requires at least one --keep value.");
+  }
+  const destination = sanitizedDraftPath(review.session.session_id, outputPath);
+  if (!destination) throw new Error("Unsafe output path.");
+  ensureDir(path.dirname(destination));
+  const draft = sanitizedReviewDraft(review, item);
+  draft.summary = summary || "";
+  draft.approved_context = approvedContext.map((entry) => String(entry));
+  fs.writeFileSync(destination, `${JSON.stringify(draft, null, 2)}\n`, "utf8");
+  return { session_id: review.session.session_id, source: item.quarantine_path, output: relativeProjectPath(destination), approved_context_count: draft.approved_context.length };
 }
 
 function revealReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, confirm = false } = {}) {
@@ -1036,9 +1202,7 @@ function revealReviewItem({ sessionId, quarantinePath: requestedQuarantinePath, 
   }
   const review = reviewItems({ sessionId });
   if (!review.session) throw new Error(sessionId ? `No HookShield session matches ${sessionId}` : "No HookShield sessions recorded.");
-  const item = requestedQuarantinePath
-    ? review.items.find((entry) => entry.quarantine_path === requestedQuarantinePath || entry.path === requestedQuarantinePath)
-    : review.items[0];
+  const item = selectReviewItem(review, requestedQuarantinePath);
   if (!item) throw new Error("No quarantined review item matched.");
   const source = safeProjectPath(item.quarantine_path);
   if (!source || !fs.existsSync(source)) throw new Error(`Quarantined file is missing: ${item.quarantine_path}`);
@@ -1109,6 +1273,7 @@ module.exports = {
   hookShieldHome,
   hookerHome,
   importKey,
+  approveReviewItem,
   initProject,
   inspectSessions,
   loadPolicy,

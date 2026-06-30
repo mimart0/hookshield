@@ -12,11 +12,15 @@
     "test:node": "node --test",
     "test:e2e": "node --test test/review-workflow-e2e.test.js",
     "test:claude:real": "node scripts/real-claude-e2e.js",
+    "test:claude:batch:real": "node scripts/real-claude-batch-review-e2e.js",
+    "test:codex:batch:real": "node scripts/real-codex-batch-review-e2e.js",
+    "test:gemini:real": "node scripts/real-gemini-e2e.js",
+    "test:gemini:batch:real": "node scripts/real-gemini-batch-review-e2e.js",
     "test:native": "go test ./...",
     "lint": "node --check bin/hookshield.js && node --check bin/hooker.js && node --check src/cli.js && node --check src/hooker.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT"
 }

@@ -194,3 +194,63 @@ func TestSnapshotObservedFilesIncludesClaudeHomeArtifacts(t *testing.T) {
 		t.Fatal("expected Claude project transcript to be monitored")
 	}
 }
+
+func TestSnapshotObservedFilesIncludesGeminiHomeArtifacts(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	previousHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", previousHome)
+	})
+
+	geminiChat := filepath.Join(home, ".gemini", "tmp", "project-hash", "chats", "session.json")
+	if err := os.MkdirAll(filepath.Dir(geminiChat), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(geminiChat, []byte(`{"prompt":"secret","response":"ok"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectMetadata := filepath.Join(home, ".gemini", "projects.json.test-tmp")
+	if err := os.WriteFile(projectMetadata, []byte(`{"projects":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := snapshotObservedFiles(root)
+	if _, ok := files["~/.gemini/tmp/project-hash/chats/session.json"]; !ok {
+		t.Fatal("expected Gemini chat session to be monitored")
+	}
+	if _, ok := files["~/.gemini/projects.json.test-tmp"]; !ok {
+		t.Fatal("expected Gemini project metadata to be monitored")
+	}
+}
+
+func TestSnapshotObservedFilesIncludesCodexHomeArtifacts(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	previousHome := os.Getenv("HOME")
+	t.Setenv("HOME", home)
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", previousHome)
+	})
+
+	codexSession := filepath.Join(home, ".codex", "sessions", "2026", "06", "29", "session.jsonl")
+	if err := os.MkdirAll(filepath.Dir(codexSession), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexSession, []byte(`{"type":"user_message","text":"secret"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	codexIndex := filepath.Join(home, ".codex", "session_index.jsonl")
+	if err := os.WriteFile(codexIndex, []byte(`{"id":"session"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := snapshotObservedFiles(root)
+	if _, ok := files["~/.codex/sessions/2026/06/29/session.jsonl"]; !ok {
+		t.Fatal("expected Codex session transcript to be monitored")
+	}
+	if _, ok := files["~/.codex/session_index.jsonl"]; !ok {
+		t.Fatal("expected Codex session index to be monitored")
+	}
+}
